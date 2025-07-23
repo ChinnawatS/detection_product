@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+ultralytics
+facenet-pytorch
+torch
+pillow
+requests
+numpy
