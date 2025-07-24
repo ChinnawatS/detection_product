@@ -30,7 +30,7 @@ ALLOWED_CLASSES = ["bicycle", "car", "motorcycle", "bus", "truck"]
 
 class ImageRequest(BaseModel):
     image_url: str
-
+    
 @app.post("/predict", tags=["Vehicle Detection"])
 async def predict_vehicle(req: ImageRequest):
     """Detect vehicles in an image from URL"""
