@@ -1,3 +1,8 @@
+"""
+Combined Vehicle Detection + Face Comparison API v0.1.0
+Supports both vehicle detection and face comparison functionality
+"""
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -10,21 +15,27 @@ import torch
 import numpy as np
 import base64
 
-app = FastAPI(title="Vehicle + Face API")
+# Initialize FastAPI app
+app = FastAPI(
+    title="Vehicle Detection + Face Comparison API",
+    description="Combined API for vehicle detection and face comparison",
+    version="0.1.0"
+)
 
 # ========================= Vehicle Detection =========================
 
-# โหลดโมเดล YOLO
+# Load YOLO model for vehicle detection
 vehicle_model = YOLO("yolov8n.pt")
 ALLOWED_CLASSES = ["bicycle", "car", "motorcycle", "bus", "truck"]
 
 class ImageRequest(BaseModel):
     image_url: str
 
-@app.post("/predict")
+@app.post("/predict", tags=["Vehicle Detection"])
 async def predict_vehicle(req: ImageRequest):
+    """Detect vehicles in an image from URL"""
     try:
-        # ดาวน์โหลดภาพจาก URL
+        # Download image from URL
         response = requests.get(req.image_url)
         if response.status_code != 200:
             raise HTTPException(status_code=400, detail="Image could not be downloaded.")
@@ -33,8 +44,8 @@ async def predict_vehicle(req: ImageRequest):
         results = vehicle_model(image)
 
         predictions = []
-
         boxes = results[0].boxes
+        
         for box in boxes:
             class_id = int(box.cls[0])
             class_name = vehicle_model.names[class_id]
@@ -61,19 +72,19 @@ async def predict_vehicle(req: ImageRequest):
                 },
             )
 
-        # หาค่า max area
+        # Find max area
         max_area = max(p["area"] for p in predictions)
 
-        # คัดเฉพาะกลุ่มที่ไม่ต่ำกว่า 90% ของ max area
+        # Filter predictions within 90% of max area
         filtered = [p for p in predictions if p["area"] >= 0.9 * max_area]
 
-        # หาตัวที่ confidence สูงสุดในกลุ่มนั้น
+        # Find highest confidence in filtered group
         if filtered:
             top_pred = max(filtered, key=lambda x: x["confidence"])
         else:
             top_pred = max(predictions, key=lambda x: x["area"])
 
-        # เพิ่มค่า area diff เปรียบเทียบกับ max area
+        # Add area difference percentage
         for p in predictions:
             area_diff_pct = (1 - p["area"] / max_area) * 100
             p["area_diff_pct"] = round(area_diff_pct, 2)
@@ -93,10 +104,12 @@ class CompareRequest(BaseModel):
     url2: str
     threshold: float = 0.9
 
+# Initialize face recognition models
 mtcnn = MTCNN(image_size=160, margin=20, keep_all=True)
 resnet = InceptionResnetV1(pretrained='vggface2').eval()
 
 def auto_orient_image(img):
+    """Auto-rotate image based on EXIF orientation"""
     try:
         for orientation in ExifTags.TAGS.keys():
             if ExifTags.TAGS[orientation] == 'Orientation':
@@ -115,6 +128,7 @@ def auto_orient_image(img):
     return img
 
 def get_face_embeddings(pil_image):
+    """Extract face embeddings from image"""
     faces = mtcnn(pil_image)
     if faces is None:
         return None, None
@@ -123,45 +137,54 @@ def get_face_embeddings(pil_image):
     return embeddings, faces
 
 def pil_to_base64(pil_image, quality=70, resize_to=(128, 128)):
-    # Resize เพื่อให้ได้ภาพขนาดเล็กพอสมควร
+    """Convert PIL image to base64 with compression"""
     if resize_to:
         pil_image = pil_image.resize(resize_to)
-
-    # แปลงเป็น base64 ด้วยการบีบอัด JPEG คุณภาพต่ำลง
+    
     buffer = io.BytesIO()
     pil_image.save(buffer, format="JPEG", quality=quality, optimize=True)
     return base64.b64encode(buffer.getvalue()).decode()
 
-@app.post("/compare_face")
+@app.post("/compare_face", tags=["Face Comparison"])
 def compare_face(req: CompareRequest):
+    """Compare faces from two image URLs"""
     try:
-        # โหลดภาพ
+        # Download and process images
+        response1 = requests.get(req.url1)
+        response2 = requests.get(req.url2)
+        
+        if response1.status_code != 200:
+            raise HTTPException(status_code=400, detail="Could not download image 1")
+        if response2.status_code != 200:
+            raise HTTPException(status_code=400, detail="Could not download image 2")
+        
         img1 = auto_orient_image(
-            Image.open(io.BytesIO(requests.get(req.url1).content)).convert("RGB")
+            Image.open(io.BytesIO(response1.content)).convert("RGB")
         )
         img2 = auto_orient_image(
-            Image.open(io.BytesIO(requests.get(req.url2).content)).convert("RGB")
+            Image.open(io.BytesIO(response2.content)).convert("RGB")
         )
 
-        # ดึงใบหน้าและ embedding จากภาพที่ 1
+        # Extract faces and embeddings from image 1
         emb1_faces = mtcnn(img1)
         if emb1_faces is None or emb1_faces.shape[0] == 0:
-            return {"match": False, "message": "❌ ไม่พบใบหน้าในภาพที่ 1"}
+            return {"match": False, "message": "❌ No face found in image 1"}
 
         emb1 = emb1_faces[0].unsqueeze(0)
         with torch.no_grad():
             emb1_vec = resnet(emb1)
 
+        # Extract faces and embeddings from image 2
         emb2, faces2 = get_face_embeddings(img2)
         if emb2 is None or faces2 is None or emb2.shape[0] == 0:
-            return {"match": False, "message": "❌ ไม่พบใบหน้าในภาพที่ 2"}
+            return {"match": False, "message": "❌ No face found in image 2"}
 
-        # คำนวณระยะห่าง
+        # Calculate distances
         distances = torch.norm(emb2 - emb1_vec, dim=1).cpu().numpy()
         min_distance = distances.min()
         min_index = distances.argmin()
 
-        # แปลงใบหน้าที่ match ที่สุดเป็น base64
+        # Convert best matching face to base64
         best_face_tensor = faces2[min_index]
         face_img = Image.fromarray(
             (best_face_tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
@@ -173,19 +196,43 @@ def compare_face(req: CompareRequest):
             return {
                 "match": True,
                 "distance": float(min_distance),
-                "message": f"✅ พบใบหน้าที่ใกล้เคียงที่สุด (distance = {min_distance:.4f})",
+                "message": f"✅ Face match found (distance = {min_distance:.4f})",
                 "base64Image": face_base64
             }
         else:
             return {
                 "match": False,
                 "distance": float(min_distance),
-                "message": f"❌ ไม่มีใบหน้าไหนตรงกับต้นแบบ (min distance = {min_distance:.4f})",
+                "message": f"❌ No face match (min distance = {min_distance:.4f})",
                 "base64Image": face_base64
             }
 
     except Exception as e:
         return {
             "match": False,
-            "message": f"❌ เกิดข้อผิดพลาด: {str(e)}"
+            "message": f"❌ Error occurred: {str(e)}"
         }
+
+# ========================= Health Check & Root =========================
+
+@app.get("/", tags=["System"])
+async def root():
+    """API root endpoint"""
+    return {
+        "message": "Vehicle Detection + Face Comparison API v0.1.0",
+        "endpoints": {
+            "vehicle_detection": "/predict",
+            "face_comparison": "/compare_face",
+            "health_check": "/health",
+            "docs": "/docs"
+        }
+    }
+
+@app.get("/health", tags=["System"])
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "version": "0.1.0",
+        "services": ["vehicle_detection", "face_comparison"]
+    }

@@ -1,0 +1,69 @@
+# Combined .dockerignore for Vehicle + Face API v0.1.0
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Model files (will be downloaded at runtime)
+*.pt
+*.pth
+*.onnx
+*.pkl
+
+# Test images
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.zip
+
+# Documentation
+README.md
+*.md
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose*
+
+# Cache directories
+.cache/
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Temporary files
+tmp/
+temp/
