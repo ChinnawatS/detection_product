@@ -1,4 +1,6 @@
 # Multi-stage build for minimal size - Vehicle + Face API v0.1.0
+
+### ---------- 🛠️ Builder Stage ----------
 FROM python:3.10-slim AS builder
 
 # Install build dependencies
@@ -13,24 +15,26 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python packages in a virtual environment
+# Create virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install packages with optimizations
+# Install optimized packages
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir \
-       torch==2.1.0+cpu \
-       torchvision==0.16.0+cpu \
-       --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.1.0+cpu \
+    torchvision==0.16.0+cpu \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r requirements.txt
 
-# Production stage
+
+### ---------- 🚀 Production Stage ----------
 FROM python:3.10-slim
 
-# Install only runtime dependencies
+# Install runtime dependencies, including libGL
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -45,7 +49,7 @@ WORKDIR /app
 COPY main.py .
 COPY .dockerignore .
 
-# Create non-root user for security
+# Create non-root user
 RUN useradd --create-home --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
 
